@@ -17,24 +17,25 @@ import { Inlinecard } from "src/entities/inlinecard";
 
 export class CardsService {
   private app: App;
-  private settings: ISettings;
-  private regex: Regex;
+  public settings: ISettings;
+  public regex: Regex;
   private parser: Parser;
   private anki: Anki;
 
   private updateFile: boolean;
   private totalOffset: number;
   private file: string;
-  private notifications: string[];
+  public notifications: string[];
 
   constructor(app: App, settings: ISettings) {
     this.app = app;
     this.settings = settings;
     this.regex = new Regex(this.settings);
-    this.parser = new Parser(this.regex, this.settings);
+    this.parser = new Parser(this);
     this.anki = new Anki();
   }
 
+  // 执行入口
   public async execute(activeFile: TFile): Promise<string[]> {
     this.regex.update(this.settings);
 
@@ -56,35 +57,39 @@ export class CardsService {
     let globalTags: string[] = undefined;
 
     // Parse frontmatter
-    const frontmatter = fileCachedMetadata.frontmatter;
+    // const frontmatter = fileCachedMetadata.frontmatter;
     let deckName = "";
-    if (parseFrontMatterEntry(frontmatter, "cards-deck")) {
-      deckName = parseFrontMatterEntry(frontmatter, "cards-deck");
-    } else if (this.settings.folderBasedDeck && activeFile.parent.path !== "/") {
-      // If the current file is in the path "programming/java/strings.md" then the deck name is "programming::java"
-      deckName = activeFile.parent.path.split("/").join("::");
-    } else {
+    // if (parseFrontMatterEntry(frontmatter, "cards-deck")) {
+    //   deckName = parseFrontMatterEntry(frontmatter, "cards-deck");
+    // } else if (this.settings.folderBasedDeck && activeFile.parent.path !== "/") {
+    //   // If the current file is in the path "programming/java/strings.md" then the deck name is "programming::java"
+    //   deckName = activeFile.parent.path.split("/").join("::");
+    // } else {
       deckName = this.settings.deck;
-    }
+    // }
 
     try {
       this.anki.storeCodeHighlightMedias();
+      // 创建anki model
       await this.anki.createModels(
         this.settings.sourceSupport,
         this.settings.codeHighlightSupport
       );
+      // 创建anki deck
       await this.anki.createDeck(deckName);
       this.file = await this.app.vault.read(activeFile);
       if (!this.file.endsWith("\n")) {
         this.file += "\n";
       }
       globalTags = this.parseGlobalTags(this.file);
+      // 从笔记中获取anki卡片id
       // TODO with empty check that does not call ankiCards line
       const ankiBlocks = this.parser.getAnkiIDsBlocks(this.file);
+      // 获取anki卡片
       const ankiCards = ankiBlocks
         ? await this.anki.getCards(this.getAnkiIDs(ankiBlocks))
         : undefined;
-
+      // 从笔记中生成anki卡片
       const cards: Card[] = this.parser.generateFlashcards(
         this.file,
         deckName,
@@ -92,9 +97,12 @@ export class CardsService {
         filePath,
         globalTags
       );
+      // 过滤anki卡片
       const [cardsToCreate, cardsToUpdate, cardsNotInAnki] =
         this.filterByUpdate(ankiCards, cards);
+      // 获取anki卡片id
       const cardIds: number[] = this.getCardsIds(ankiCards, cards);
+      // 获取笔记中需要删除的anki卡片id
       const cardsToDelete: number[] = this.parser.getCardsToDelete(this.file);
 
       console.info("Flashcards: Cards to create");
@@ -116,7 +124,8 @@ export class CardsService {
       this.insertMedias(cards, sourcePath);
       await this.deleteCardsOnAnki(cardsToDelete, ankiBlocks);
       await this.updateCardsOnAnki(cardsToUpdate);
-      await this.insertCardsOnAnki(cardsToCreate, frontmatter, deckName);
+      await this.insertCardsOnAnki(cardsToCreate);
+      // await this.insertCardsOnAnki(cardsToCreate, frontmatter, deckName);
 
       // Update decks if needed
       const deckNeedToBeChanged = await this.deckNeedToBeChanged(
@@ -187,8 +196,8 @@ export class CardsService {
 
   private async insertCardsOnAnki(
     cardsToCreate: Card[],
-    frontmatter: FrontMatterCache,
-    deckName: string
+    // frontmatter: FrontMatterCache,
+    // deckName: string
   ): Promise<number> {
     if (cardsToCreate.length) {
       let insertedCards = 0;
@@ -212,7 +221,7 @@ export class CardsService {
           card.reversed ? (total += 2) : total++;
         });
 
-        this.updateFrontmatter(frontmatter, deckName);
+        // this.updateFrontmatter(frontmatter, deckName);
         this.writeAnkiBlocks(cardsToCreate);
 
         this.notifications.push(
@@ -228,6 +237,7 @@ export class CardsService {
 
   private updateFrontmatter(frontmatter: FrontMatterCache, deckName: string) {
     let newFrontmatter = "";
+    // 在笔记中添加属性
     const cardsDeckLine = `cards-deck: ${deckName}\n`;
     if (frontmatter) {
       const oldFrontmatter: string = this.file.substring(
@@ -248,6 +258,7 @@ export class CardsService {
           );
       }
     } else {
+      // 如果笔记中没有属性，则添加属性
       newFrontmatter = `---\n${cardsDeckLine}---\n\n`;
       this.totalOffset += newFrontmatter.length;
       this.file = newFrontmatter + this.file;

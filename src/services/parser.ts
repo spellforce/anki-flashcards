@@ -8,15 +8,18 @@ import { Clozecard } from "src/entities/clozecard";
 import { escapeMarkdown } from "src/utils";
 import { Card } from "src/entities/card";
 import { htmlToMarkdown } from 'obsidian';
+import { CardsService } from "src/services/cards";
 
 export class Parser {
   private regex: Regex;
   private settings: ISettings;
   private htmlConverter;
+  private card: CardsService;
 
-  constructor(regex: Regex, settings: ISettings) {
-    this.regex = regex;
-    this.settings = settings;
+  constructor(card: CardsService) {
+    this.regex = card.regex;
+    this.settings = card.settings;
+    this.card = card;
     this.htmlConverter = new showdown.Converter();
     this.htmlConverter.setOption("simplifiedAutoLink", true);
     this.htmlConverter.setOption("tables", true);
@@ -42,20 +45,21 @@ export class Parser {
       // https://regex101.com/r/agSp9X/4
       headings = [...file.matchAll(this.regex.headingsRegex)];
     }
+    // this.card.notifications.push(JSON.stringify(headings));
 
     note = this.substituteObsidianLinks(`[[${note}]]`, vault);
     cards = cards.concat(
       this.generateCardsWithTag(file, headings, deck, vault, note, globalTags)
     );
-    cards = cards.concat(
-      this.generateInlineCards(file, headings, deck, vault, note, globalTags)
-    );
-    cards = cards.concat(
-      this.generateSpacedCards(file, headings, deck, vault, note, globalTags)
-    );
-    cards = cards.concat(
-      this.generateClozeCards(file, headings, deck, vault, note, globalTags)
-    );
+    // cards = cards.concat(
+    //   this.generateInlineCards(file, headings, deck, vault, note, globalTags)
+    // );
+    // cards = cards.concat(
+    //   this.generateSpacedCards(file, headings, deck, vault, note, globalTags)
+    // );
+    // cards = cards.concat(
+    //   this.generateClozeCards(file, headings, deck, vault, note, globalTags)
+    // );
 
     // Filter out cards that are fully inside a code block, a math block or a math inline block
     const codeBlocks = [...file.matchAll(this.regex.obsidianCodeBlock)];
@@ -196,14 +200,50 @@ export class Parser {
 
     return cards;
   }
+  private generateClozeCard(file: string, vault: string, initialOffset: number) {
+    
+    const mathBlocks = [...file.matchAll(this.regex.mathBlock)];
+    const mathInline = [...file.matchAll(this.regex.mathInline)];
+    const blocksToFilter = [...mathBlocks, ...mathInline];
+    const rangesToDiscard = blocksToFilter.map(x => ([x.index, x.index + x[0].length]))
+    // Identify curly clozes, drop all the ones that are in math blocks i.e. ($\frac{1}{12}$) and substitute the others with Anki syntax
+    let clozeText = file.replace(this.regex.singleClozeCurly, (match, g1, g2, g3, offset) => {
+      const globalOffset = initialOffset + offset;
+      const isInMathBlock = rangesToDiscard.some(x => (globalOffset >= x[0] && globalOffset + match[0].length <= x[1]));
+      if (isInMathBlock) {
+        return match;
+      } else {
+        if (g2) {
+          return `{{c${g2}::${g3}}}`;
+        } else {
+          return `{{c1::${g3}}}`;
+        }
+      }
+    });
 
+    // Replace the highlight clozes in the line with Anki syntax
+    clozeText = clozeText.replace(this.regex.singleClozeHighlight, "{{c1::$2}}");
+
+    if (clozeText === file) {
+      // If the clozeText is the same as the match it means that the curly clozes were all in math blocks
+      return null;
+    }
+
+    const originalLine = file.trim();
+    // Add context
+    clozeText = clozeText.trim();
+    clozeText = this.parseLine(clozeText, vault);
+
+    return {originalLine, clozeText};
+  }
   private generateClozeCards(
     file: string,
     headings: any,
     deck: string,
     vault: string,
     note: string,
-    globalTags: string[] = []
+    globalTags: string[] = [],
+    index: number = 0
   ) {
     const contextAware = this.settings.contextAwareMode;
     const cards: Clozecard[] = [];
@@ -263,8 +303,8 @@ export class Parser {
       medias = medias.concat(this.getAudioLinks(clozeText));
       clozeText = this.parseLine(clozeText, vault);
 
-      const initialOffset = match.index;
-      const endingLine = match.index + match[0].length;
+      const initialOffset = match.index ;
+      const endingLine = match.index + match[0].length ;
       const tags: string[] = this.parseTags(match[4], globalTags);
       const id: number = match[5] ? Number(match[5]) : -1;
       const inserted: boolean = match[5] ? true : false;
@@ -376,9 +416,9 @@ export class Parser {
     globalTags: string[] = []
   ) {
     const contextAware = this.settings.contextAwareMode;
-    const cards: Flashcard[] = [];
+    let cards: Flashcard[] = [];
     const matches = [...file.matchAll(this.regex.flashscardsWithTag)];
-
+    console.log("matches: \n" , matches);
     const embedMap = this.getEmbedMap();
 
     for (const match of matches) {
@@ -387,6 +427,8 @@ export class Parser {
         `#${this.settings.flashcardsTag}-reverse` ||
         match[3].trim().toLowerCase() ===
         `#${this.settings.flashcardsTag}/reverse`;
+      const isCloze: boolean = match[3].trim().toLowerCase() ===
+        `#${this.settings.flashcardsTag}-cloze`;
       const headingLevel = match[1].trim().length !== 0 ? match[1].length : -1;
       // Match.index - 1 because otherwise in the context there will be even match[1], i.e. the question itself
       const context = contextAware
@@ -394,16 +436,17 @@ export class Parser {
         : "";
 
       const originalQuestion = match[2].trim();
+      let answer = match[5].trim();
       let question = contextAware
-        ? [...context, match[2].trim()].join(
+        ? [...context, originalQuestion || answer].join(
           `${this.settings.contextSeparator}`
         )
-        : match[2].trim();
-      let answer = match[5].trim();
+        : (originalQuestion || answer);
+        
       let medias: string[] = this.getImageLinks(question);
       medias = medias.concat(this.getImageLinks(answer));
       medias = medias.concat(this.getAudioLinks(answer));
-
+      
       answer = this.getEmbedWrapContent(embedMap, answer);
 
       question = this.parseLine(question, vault);
@@ -412,28 +455,54 @@ export class Parser {
       const initialOffset = match.index
       const endingLine = match.index + match[0].length;
       const tags: string[] = this.parseTags(match[4], globalTags);
+      
       const id: number = match[6] ? Number(match[6]) : -1;
       const inserted: boolean = match[6] ? true : false;
-      const fields: any = { Front: question, Back: answer };
-      if (this.settings.sourceSupport) {
-        fields["Source"] = note;
-      }
+      
       const containsCode = this.containsCode([question, answer]);
-
-      const card = new Flashcard(
-        id,
-        deck,
-        originalQuestion,
-        fields,
-        reversed,
-        initialOffset,
-        endingLine,
-        tags,
-        inserted,
-        medias,
-        containsCode
-      );
-      cards.push(card);
+      if (!isCloze) {
+        const fields: any = { Front: question, Back: answer };
+        if (this.settings.sourceSupport) {
+          fields["Source"] = note;
+        }
+        const card = new Flashcard(
+          id,
+          deck,
+          originalQuestion,
+          fields,
+          reversed,
+          initialOffset,
+          endingLine,
+          tags,
+          inserted,
+          medias,
+          containsCode
+        );
+        cards.push(card);
+      } else {
+        // const isMultiLine: boolean = tags.includes("anki-multiple");
+        const {originalLine, clozeText} = this.generateClozeCard(answer, vault, initialOffset);
+        const fields: any = { Text: clozeText, Extra: "" };
+        if (this.settings.sourceSupport) {
+          fields["Source"] = note;
+        }
+        console.log("originalLine: \n", originalLine, clozeText);
+        const card = new Clozecard(
+          id,
+          deck,
+          originalLine,
+          fields,
+          reversed,
+          initialOffset,
+          endingLine,
+          tags,
+          inserted,
+          medias,
+          containsCode
+        );
+     
+        cards.push(card);
+      }
     }
 
     return cards;

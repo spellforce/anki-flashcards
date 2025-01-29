@@ -1,6 +1,6 @@
 {
-  "name": "flashcards",
-  "version": "0.2.0",
+  "name": "anki-flashcards",
+  "version": "0.1.0",
   "description": "An Anki integration.",
   "main": "main.js",
   "scripts": {
@@ -8,6 +8,11 @@
     "build": "rollup --config rollup.config.js --environment BUILD:production",
     "test": "jest"
   },
+  "files": [
+    "main.js",
+    "manifest.json",
+    "data.json"
+  ],
   "keywords": [
     "obsidian",
     "anki",

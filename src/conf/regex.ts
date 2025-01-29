@@ -48,8 +48,8 @@ export class Regex {
 
     this.mathBlock = /(\$\$)(.*?)(\$\$)/gis;
     this.mathInline = /(\$)(.*?)(\$)/gi;
-
-    this.cardsDeckLine = /cards-deck: [\p{L}]+/giu;
+                                                                                                      
+    // this.cardsDeckLine = /cards-deck: [\p{L}]+/giu;
     this.cardsToDelete = /^\s*(?:\n)(?:\^(\d{13}))(?:\n\s*?)?/gm;
 
     // https://regex101.com/r/WxuFI2/1
@@ -60,12 +60,24 @@ export class Regex {
     // Cards
     const flags = "gimu";
     // https://regex101.com/r/p3yQwY/2
+    // let str =
+    //   "( {0,3}[#]*)((?:[^\\n]\\n?)+?)(#" +
+    //   settings.flashcardsTag +
+    //   "(?:[/-]reverse)?)((?: *#[\\p{Number}\\p{Letter}\\-\\/_]+)*) *?\\n+((?:[^\\n]\\n?)*?(?=\\^\\d{13}|$))(?:\\^(\\d{13}))?";
+    // const endTag = '#anki\/end'
+    // let str = `( {0,3}[#]*)((?:[^\\n]\\n?)*?)(#${settings.flashcardsTag}(?:-reverse)?)((?: *#[\\w-]+)*) *?\\n+((?:[^\\n]\\n*)*?(?=\\^\\d{13}|${endTag}))(?:${endTag}.*\\n*)?(?:\\^(\\d{13}))?(?:\\n${endTag}.*\\n)?`
+    // let str =
+    // "( {0,3}[#]*)((?:[^\\n]\\n?)*?)"+
+    // "(#" + settings.flashcardsTag + "(?:[/-]reverse|-cloze)?)"+
+    // "((?: *#[\\p{Number}\\p{Letter}\\-\\/_]+)*) *?\\n+((?:[^\\n]\\n*)*?"+
+    // "(?=\\^\\d{13}|$|"+endTag+"))"+`(?:${endTag}.*\\n*)?`+"(?:\\^(\\d{13}))?" + `(?:\\n${endTag}.*\\n)?`;
     let str =
-      "( {0,3}[#]*)((?:[^\\n]\\n?)+?)(#" +
-      settings.flashcardsTag +
-      "(?:[/-]reverse)?)((?: *#[\\p{Number}\\p{Letter}\\-\\/_]+)*) *?\\n+((?:[^\\n]\\n?)*?(?=\\^\\d{13}|$))(?:\\^(\\d{13}))?";
+    "( {0,3}[#]*)((?:[^\\n]\\n?)*?)"+
+    "(#" + settings.flashcardsTag + "(?:[/-]reverse|-cloze)?)"+
+    "((?: *#[\\p{Number}\\p{Letter}\\-\\/_]+)*) *?\\n+((?:[^\\n]\\n*)*?"+
+    "(?=\\^\\d{13}|$|#"+settings.flashcardsTag+"(?:.*)))"+"(?:\\^(\\d{13}))?";
     this.flashscardsWithTag = new RegExp(str, flags);
-
+    // console.log(this.flashscardsWithTag);
     // https://regex101.com/r/8wmOo8/1
     const sepLongest = settings.inlineSeparator.length >= settings.inlineSeparatorReverse.length ? settings.inlineSeparator : settings.inlineSeparatorReverse;
     const sepShortest = settings.inlineSeparator.length < settings.inlineSeparatorReverse.length ? settings.inlineSeparator : settings.inlineSeparatorReverse;
